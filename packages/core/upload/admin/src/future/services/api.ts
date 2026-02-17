@@ -10,6 +10,7 @@ import {
   setUploadFailed,
   retryCancelledFiles,
 } from '../store/uploadProgress';
+import { fetchUrlToFile, getFilenameFromUrl } from '../utils/files';
 
 import type {
   CreateFilesStream,
@@ -19,6 +20,11 @@ import type {
 interface UploadFilesArgs {
   formData: FormData;
   totalFiles: number;
+}
+
+interface UploadFromUrlsArgs {
+  urls: string[];
+  folderId: number | null;
 }
 
 interface RootState {
@@ -271,6 +277,117 @@ const processSSEStream = async ({
   return streamResult;
 };
 
+/**
+ * Options for performing a streaming upload.
+ */
+interface PerformStreamUploadOptions {
+  token: string | null | undefined;
+  formData: FormData;
+  abortController: AbortController;
+  uploadId: number;
+  dispatch: Dispatch;
+  indexMapper?: (serverIndex: number) => number;
+  onUploadFailed?: (message: string) => void;
+}
+
+/**
+ * Error shape returned by upload operations.
+ */
+interface UploadError {
+  name: 'UnknownError';
+  message: string;
+  status?: number;
+}
+
+/**
+ * Result of a streaming upload operation.
+ * Matches RTK Query's expected return type for queryFn.
+ */
+type UploadResult =
+  | { data: CreateFilesStream.Response; error?: undefined }
+  | { error: UploadError; data?: undefined };
+
+/**
+ * Performs the actual streaming upload to the server.
+ * Shared by uploadFilesStream, retryCancelledFilesStream, and uploadFromUrls.
+ *
+ * @param options - Upload configuration
+ * @returns The upload result or error
+ */
+const performStreamUpload = async ({
+  token,
+  formData,
+  abortController,
+  uploadId,
+  dispatch,
+  indexMapper = (i) => i,
+  onUploadFailed = (message) => dispatch(setUploadFailed({ message })),
+}: PerformStreamUploadOptions): Promise<UploadResult> => {
+  try {
+    const response = await fetchUploadStream({
+      token,
+      formData,
+      signal: abortController.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      unregisterAbortController(uploadId);
+
+      let errorMessage = 'Upload request failed';
+      try {
+        const errorData = await response.json();
+        if (errorData.error?.message) {
+          errorMessage = errorData.error.message;
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch {
+        errorMessage = `Upload failed with status ${response.status}`;
+      }
+
+      onUploadFailed(errorMessage);
+
+      return {
+        error: {
+          name: 'UnknownError',
+          message: errorMessage,
+          status: response.status,
+        },
+      };
+    }
+
+    const streamResult = await processSSEStream({
+      response,
+      dispatch,
+      indexMapper,
+    });
+
+    unregisterAbortController(uploadId);
+
+    if (streamResult && streamResult.data.length > 0) {
+      return { data: streamResult };
+    }
+
+    return { data: { data: [], errors: [] } };
+  } catch (err) {
+    unregisterAbortController(uploadId);
+
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return { error: { name: 'UnknownError', message: 'Upload cancelled' } };
+    }
+
+    const errorMessage = err instanceof Error ? err.message : 'Network error occurred';
+    onUploadFailed(errorMessage);
+
+    return {
+      error: {
+        name: 'UnknownError',
+        message: errorMessage,
+      },
+    };
+  }
+};
+
 const uploadApi = adminApi
   .enhanceEndpoints({
     addTagTypes: ['Asset', 'Folder'],
@@ -292,7 +409,7 @@ const uploadApi = adminApi
           const fileNames = fileInfo.map((info) => info.name);
           const fileSizes = files.map((file) => file.size);
 
-          // Open the progress dialog and get the uploadId
+          // Open the progress dialog
           dispatch(openUploadProgress({ totalFiles, fileNames, fileSizes }));
           dispatch(updateProgress(0));
 
@@ -306,84 +423,13 @@ const uploadApi = adminApi
           const abortController = new AbortController();
           registerAbortController(uploadId, abortController);
 
-          try {
-            const response = await fetchUploadStream({
-              token,
-              formData,
-              signal: abortController.signal,
-            });
-
-            if (!response.ok || !response.body) {
-              unregisterAbortController(uploadId);
-
-              // Try to parse error message from response
-              let errorMessage = 'Upload request failed';
-              try {
-                const errorData = await response.json();
-                if (errorData.error?.message) {
-                  errorMessage = errorData.error.message;
-                } else if (errorData.message) {
-                  errorMessage = errorData.message;
-                }
-              } catch {
-                // If we can't parse the error, use a generic message with status code
-                errorMessage = `Upload failed with status ${response.status}`;
-              }
-
-              // Mark all files as failed in the UI
-              dispatch(setUploadFailed({ message: errorMessage }));
-
-              return {
-                error: {
-                  name: 'UnknownError',
-                  message: errorMessage,
-                  status: response.status,
-                },
-              };
-            }
-
-            const streamResult = await processSSEStream({
-              response,
-              dispatch,
-            });
-
-            unregisterAbortController(uploadId);
-
-            if (streamResult && streamResult.data.length > 0) {
-              return { data: streamResult };
-            }
-
-            // If stream ended without completing any files, mark all as failed
-            const errorMessage = 'No files were uploaded successfully';
-            dispatch(setUploadFailed({ message: errorMessage }));
-
-            return {
-              error: {
-                name: 'UnknownError',
-                message: errorMessage,
-              },
-            };
-          } catch (err) {
-            unregisterAbortController(uploadId);
-
-            if (err instanceof DOMException && err.name === 'AbortError') {
-              // Don't mark as failed for user-initiated cancellations
-              return {
-                error: { name: 'UnknownError', message: 'Upload cancelled' },
-              };
-            }
-
-            // For network errors or other exceptions, mark all files as failed
-            const errorMessage = err instanceof Error ? err.message : 'Network error occurred';
-            dispatch(setUploadFailed({ message: errorMessage }));
-
-            return {
-              error: {
-                name: 'UnknownError',
-                message: errorMessage,
-              },
-            };
-          }
+          return performStreamUpload({
+            token,
+            formData,
+            abortController,
+            uploadId,
+            dispatch,
+          });
         },
         invalidatesTags: [{ type: 'Asset', id: 'LIST' }],
       }),
@@ -434,88 +480,146 @@ const uploadApi = adminApi
           const abortController = new AbortController();
           registerAbortController(uploadId, abortController);
 
-          try {
-            const response = await fetchUploadStream({
-              token,
-              formData,
-              signal: abortController.signal,
-            });
+          // Custom error handler: mark individual retried files as failed
+          const onUploadFailed = (message: string) => {
+            for (const originalIndex of indexMapping) {
+              dispatch(
+                setFileError({
+                  index: originalIndex,
+                  name: stateFiles[originalIndex].name,
+                  message,
+                })
+              );
+            }
+          };
 
-            if (!response.ok || !response.body) {
-              unregisterAbortController(uploadId);
+          return performStreamUpload({
+            token,
+            formData,
+            abortController,
+            uploadId,
+            dispatch,
+            indexMapper: (serverIndex) => indexMapping[serverIndex],
+            onUploadFailed,
+          });
+        },
+        invalidatesTags: [{ type: 'Asset', id: 'LIST' }],
+      }),
 
-              let errorMessage = 'Retry request failed';
-              try {
-                const errorData = await response.json();
-                if (errorData.error?.message) {
-                  errorMessage = errorData.error.message;
-                } else if (errorData.message) {
-                  errorMessage = errorData.message;
-                }
-              } catch {
-                errorMessage = `Retry failed with status ${response.status}`;
+      /**
+       * Upload files from URLs.
+       * Fetches each URL, dispatches errors for failed fetches, and uploads successful ones.
+       */
+      uploadFromUrls: builder.mutation<CreateFilesStream.Response, UploadFromUrlsArgs>({
+        queryFn: async ({ urls, folderId }, { dispatch, getState }) => {
+          const token = (getState() as RootState).admin_app?.token;
+
+          // Extract filenames from URLs for the progress dialog
+          const fileNames = urls.map((url) => getFilenameFromUrl(url));
+
+          // Open progress dialog with all URLs as pending files
+          dispatch(
+            openUploadProgress({
+              totalFiles: urls.length,
+              fileNames,
+              fileSizes: urls.map(() => 0), // Size unknown until fetched
+            })
+          );
+          dispatch(updateProgress(0));
+
+          // Get the uploadId from state after dispatching
+          const uploadId = (getState() as RootState).uploadProgress.uploadId;
+
+          // Create abort controller for this upload
+          const abortController = new AbortController();
+          registerAbortController(uploadId, abortController);
+
+          // Fetch each URL
+          const fetchResults = await Promise.allSettled(
+            urls.map(async (url, index) => {
+              // Check if aborted before fetching
+              if (abortController.signal.aborted) {
+                throw new DOMException('Aborted', 'AbortError');
               }
 
-              // Mark retried files as failed
-              for (const originalIndex of indexMapping) {
+              try {
+                const file = await fetchUrlToFile(url);
+                return { index, file };
+              } catch (error) {
+                // Dispatch error for this file (same as upload error)
                 dispatch(
                   setFileError({
-                    index: originalIndex,
-                    name: stateFiles[originalIndex].name,
-                    message: errorMessage,
+                    index,
+                    name: fileNames[index],
+                    message: error instanceof Error ? error.message : 'Failed to fetch',
                   })
                 );
+                throw error;
               }
+            })
+          );
 
-              return {
-                error: {
-                  name: 'UnknownError',
-                  message: errorMessage,
-                  status: response.status,
-                },
-              };
-            }
-
-            const streamResult = await processSSEStream({
-              response,
-              dispatch,
-              indexMapper: (serverIndex) => indexMapping[serverIndex],
-            });
-
+          // Check if cancelled during fetch
+          if (abortController.signal.aborted) {
             unregisterAbortController(uploadId);
-
-            if (streamResult && streamResult.data.length > 0) {
-              return { data: streamResult };
-            }
-
-            return {
-              error: {
-                name: 'UnknownError',
-                message: 'No files were uploaded successfully',
-              },
-            };
-          } catch (err) {
-            unregisterAbortController(uploadId);
-
-            if (err instanceof DOMException && err.name === 'AbortError') {
-              return {
-                error: { name: 'UnknownError', message: 'Retry cancelled' },
-              };
-            }
-
-            const errorMessage = err instanceof Error ? err.message : 'Network error occurred';
-            return {
-              error: {
-                name: 'UnknownError',
-                message: errorMessage,
-              },
-            };
+            return { error: { name: 'UnknownError', message: 'Upload cancelled' } };
           }
+
+          // Collect successfully fetched files with their original indices
+          const successfulFetches: Array<{ index: number; file: File }> = [];
+          for (const result of fetchResults) {
+            if (result.status === 'fulfilled') {
+              successfulFetches.push(result.value);
+            }
+          }
+
+          // If all URLs failed, return early
+          if (successfulFetches.length === 0) {
+            unregisterAbortController(uploadId);
+            return { data: { data: [], errors: [] } };
+          }
+
+          // Store original files for retry functionality (with correct indices)
+          const filesArray: File[] = [];
+          for (const { index, file } of successfulFetches) {
+            filesArray[index] = file;
+          }
+          registerUploadedFiles(uploadId, filesArray);
+
+          // Build FormData for upload
+          const formData = new FormData();
+          const fileInfoArray = successfulFetches.map(({ file }) => ({
+            name: file.name,
+            caption: null,
+            alternativeText: null,
+            folder: folderId,
+          }));
+
+          // Create index mapping: server index -> original index
+          const indexMapping = successfulFetches.map(({ index }) => index);
+
+          successfulFetches.forEach(({ file }) => {
+            formData.append('files', file);
+          });
+          formData.append('fileInfo', JSON.stringify(fileInfoArray));
+
+          return performStreamUpload({
+            token,
+            formData,
+            abortController,
+            uploadId,
+            dispatch,
+            indexMapper: (serverIndex) => indexMapping[serverIndex],
+          });
         },
         invalidatesTags: [{ type: 'Asset', id: 'LIST' }],
       }),
     }),
   });
 
-export const { useUploadFilesStreamMutation, useRetryCancelledFilesStreamMutation } = uploadApi;
+export const {
+  useUploadFilesStreamMutation,
+  useRetryCancelledFilesStreamMutation,
+  useUploadFromUrlsMutation,
+} = uploadApi;
 export { uploadApi };

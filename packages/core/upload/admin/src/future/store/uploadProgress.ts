@@ -64,18 +64,26 @@ const uploadProgressSlice = createSlice({
   reducers: {
     openUploadProgress(
       state,
-      action: PayloadAction<{ totalFiles: number; fileNames: string[]; fileSizes: number[] }>
+      action: PayloadAction<{
+        totalFiles: number;
+        fileNames: string[];
+        fileSizes: number[];
+      }>
     ) {
       state.isVisible = true;
       state.isMinimized = false;
       state.progress = 0;
-      state.totalFiles = action.payload.totalFiles;
-      state.files = action.payload.fileNames.map((name, index) => ({
+
+      // Create pending files for upload
+      const pendingFiles: FileProgress[] = action.payload.fileNames.map((name, index) => ({
         name,
         index,
         status: 'pending' as FileProgressStatus,
         size: action.payload.fileSizes[index] || 0,
       }));
+
+      state.files = pendingFiles;
+      state.totalFiles = action.payload.totalFiles;
       state.errors = [];
       state.uploadId += 1;
     },

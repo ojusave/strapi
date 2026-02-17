@@ -9,21 +9,28 @@ export class AssetsPage {
   readonly page: Page;
   readonly newButton: Locator;
   readonly importFilesMenuItem: Locator;
+  readonly importFromUrlMenuItem: Locator;
   readonly fileInput: Locator;
   readonly gridViewButton: Locator;
   readonly tableViewButton: Locator;
   readonly dropZone: Locator;
   readonly uploadProgressDialog: Locator;
+  readonly importFromUrlDialog: Locator;
+  readonly urlTextarea: Locator;
 
   constructor(page: Page) {
     this.page = page;
     this.newButton = page.getByRole('button', { name: 'New' });
-    this.importFilesMenuItem = page.getByRole('menuitem', { name: 'Import files' });
+    this.importFilesMenuItem = page.getByRole('menuitem', { name: 'File upload' }).first();
+    this.importFromUrlMenuItem = page.getByRole('menuitem', { name: 'File upload from URL' });
+
     this.fileInput = page.locator('input[type="file"]');
     this.gridViewButton = page.getByRole('radio', { name: 'Grid view' });
     this.tableViewButton = page.getByRole('radio', { name: 'Table view' });
     this.dropZone = page.getByTestId('assets-dropzone');
     this.uploadProgressDialog = page.getByTestId('upload-progress-dialog');
+    this.importFromUrlDialog = page.getByRole('dialog', { name: 'Import from URL' });
+    this.urlTextarea = page.getByRole('textbox', { name: 'URL' });
   }
 
   async goto() {
@@ -171,5 +178,24 @@ export class AssetsPage {
    */
   async closeUploadProgressDialog() {
     await this.uploadProgressDialog.getByRole('button', { name: 'Close' }).click();
+  }
+
+  /**
+   * Open the import from URL dialog
+   */
+  async openImportFromUrlDialog() {
+    await this.openNewMenu();
+    await this.importFromUrlMenuItem.click();
+    await expect(this.importFromUrlDialog).toBeVisible();
+  }
+
+  /**
+   * Upload files from URLs using the import from URL dialog
+   */
+  async uploadFilesFromUrl(urls: string | string[]) {
+    await this.openImportFromUrlDialog();
+    const urlsArray = Array.isArray(urls) ? urls : [urls];
+    await this.urlTextarea.fill(urlsArray.join('\n'));
+    await this.importFromUrlDialog.getByRole('button', { name: 'Upload' }).click();
   }
 }

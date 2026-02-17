@@ -5,97 +5,113 @@ import { AssetsPage } from './page-objects/AssetsPage';
 import path from 'path';
 import { describeOnCondition } from '../../../../utils/shared';
 
-describeOnCondition(process.env.UNSTABLE_MEDIA_LIBRARY === 'true')(
-  'Media Library - File Upload',
-  () => {
-    test.beforeEach(async ({ page }) => {
-      await resetDatabaseAndImportDataFromPath('with-admin.tar');
-      await page.goto('/admin');
-      await login({ page });
-    });
+// A stable public test image URL
+const TEST_IMAGE_URL = 'https://picsum.photos/id/237/200/300.jpg';
 
-    test('should upload a file and show progress dialog with success', async ({ page }) => {
-      const assetsPage = new AssetsPage(page);
-      await assetsPage.goto();
+describeOnCondition(process.env.UNSTABLE_MEDIA_LIBRARY === 'true')('File Upload', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetDatabaseAndImportDataFromPath('with-admin.tar');
+    await page.goto('/admin');
+    await login({ page });
+  });
 
-      const testImagePath = path.join(__dirname, '../../../data/uploads/test-image.jpg');
+  test('should upload a file and show progress dialog with success', async ({ page }) => {
+    const assetsPage = new AssetsPage(page);
+    await assetsPage.goto();
 
-      // Upload the file via file picker
-      await assetsPage.uploadFilesWithFilePicker(testImagePath);
+    const testImagePath = path.join(__dirname, '../../../data/uploads/test-image.jpg');
 
-      // Verify the upload progress dialog appears and shows success
-      await expect(assetsPage.uploadProgressDialog).toBeVisible();
-      await assetsPage.waitForUploadProgressSuccess();
+    // Upload the file via file picker
+    await assetsPage.uploadFilesWithFilePicker(testImagePath);
 
-      // Close the dialog
-      await assetsPage.closeUploadProgressDialog();
-      await expect(assetsPage.uploadProgressDialog).not.toBeVisible();
-    });
+    // Verify the upload progress dialog appears and shows success
+    await expect(assetsPage.uploadProgressDialog).toBeVisible();
+    await assetsPage.waitForUploadProgressSuccess();
 
-    test('should upload multiple files and show progress dialog with success', async ({ page }) => {
-      const assetsPage = new AssetsPage(page);
-      await assetsPage.goto();
+    // Close the dialog
+    await assetsPage.closeUploadProgressDialog();
+    await expect(assetsPage.uploadProgressDialog).not.toBeVisible();
+  });
 
-      const testFiles = [
-        path.join(__dirname, '../../../data/uploads/test-image-1.jpg'),
-        path.join(__dirname, '../../../data/uploads/test-image-2.jpg'),
-      ];
+  test('should upload multiple files and show progress dialog with success', async ({ page }) => {
+    const assetsPage = new AssetsPage(page);
+    await assetsPage.goto();
 
-      // Upload multiple files
-      await assetsPage.uploadFilesWithFilePicker(testFiles);
+    const testFiles = [
+      path.join(__dirname, '../../../data/uploads/test-image-1.jpg'),
+      path.join(__dirname, '../../../data/uploads/test-image-2.jpg'),
+    ];
 
-      // Verify the upload progress dialog appears and shows success
-      await expect(assetsPage.uploadProgressDialog).toBeVisible();
-      await assetsPage.waitForUploadProgressSuccess();
+    // Upload multiple files
+    await assetsPage.uploadFilesWithFilePicker(testFiles);
 
-      // Verify the success message mentions the count
-      await expect(
-        assetsPage.uploadProgressDialog.getByText('2 files uploaded successfully')
-      ).toBeVisible();
+    // Verify the upload progress dialog appears and shows success
+    await expect(assetsPage.uploadProgressDialog).toBeVisible();
+    await assetsPage.waitForUploadProgressSuccess();
 
-      // Close the dialog
-      await assetsPage.closeUploadProgressDialog();
-    });
+    // Verify the success message mentions the count
+    await expect(
+      assetsPage.uploadProgressDialog.getByText('2 files uploaded successfully')
+    ).toBeVisible();
 
-    test('should display uploaded file in the assets table view', async ({ page }) => {
-      const assetsPage = new AssetsPage(page);
-      await assetsPage.goto();
+    // Close the dialog
+    await assetsPage.closeUploadProgressDialog();
+  });
 
-      await assetsPage.switchToTableView();
+  test('should display uploaded file in the assets table view', async ({ page }) => {
+    const assetsPage = new AssetsPage(page);
+    await assetsPage.goto();
 
-      const testImagePath = path.join(__dirname, '../../../data/uploads/test-image.jpg');
+    await assetsPage.switchToTableView();
 
-      // Upload the file
-      await assetsPage.uploadFilesWithFilePicker(testImagePath);
+    const testImagePath = path.join(__dirname, '../../../data/uploads/test-image.jpg');
 
-      // Wait for upload to complete
-      await assetsPage.waitForUploadProgressSuccess();
-      await assetsPage.closeUploadProgressDialog();
+    // Upload the file
+    await assetsPage.uploadFilesWithFilePicker(testImagePath);
 
-      // Verify the uploaded file appears in the table
-      const assetRow = assetsPage.getAssetRow('test-image');
-      await expect(assetRow).toBeVisible();
-    });
+    // Wait for upload to complete
+    await assetsPage.waitForUploadProgressSuccess();
+    await assetsPage.closeUploadProgressDialog();
 
-    test('should upload a file via drag and drop', async ({ page }) => {
-      const assetsPage = new AssetsPage(page);
-      await assetsPage.goto();
+    // Verify the uploaded file appears in the table
+    const assetRow = assetsPage.getAssetRow('test-image');
+    await expect(assetRow).toBeVisible();
+  });
 
-      await assetsPage.switchToTableView();
+  test('should upload a file via drag and drop', async ({ page }) => {
+    const assetsPage = new AssetsPage(page);
+    await assetsPage.goto();
 
-      const testImagePath = path.join(__dirname, '../../../data/uploads/test-image.jpg');
+    await assetsPage.switchToTableView();
 
-      // Upload the file via drag and drop
-      await assetsPage.uploadFilesWithDragAndDrop(testImagePath);
+    const testImagePath = path.join(__dirname, '../../../data/uploads/test-image.jpg');
 
-      // Verify the upload progress dialog appears and shows success
-      await expect(assetsPage.uploadProgressDialog).toBeVisible();
-      await assetsPage.waitForUploadProgressSuccess();
-      await assetsPage.closeUploadProgressDialog();
+    // Upload the file via drag and drop
+    await assetsPage.uploadFilesWithDragAndDrop(testImagePath);
 
-      // Verify the uploaded file appears in the table
-      const assetRow = assetsPage.getAssetRow('test-image');
-      await expect(assetRow).toBeVisible();
-    });
-  }
-);
+    // Verify the upload progress dialog appears and shows success
+    await expect(assetsPage.uploadProgressDialog).toBeVisible();
+    await assetsPage.waitForUploadProgressSuccess();
+    await assetsPage.closeUploadProgressDialog();
+
+    // Verify the uploaded file appears in the table
+    const assetRow = assetsPage.getAssetRow('test-image');
+    await expect(assetRow).toBeVisible();
+  });
+
+  test('should upload a file from URL and show progress dialog with success', async ({ page }) => {
+    const assetsPage = new AssetsPage(page);
+    await assetsPage.goto();
+
+    // Upload from URL
+    await assetsPage.uploadFilesFromUrl(TEST_IMAGE_URL);
+
+    // Verify the upload progress dialog appears and shows success
+    await expect(assetsPage.uploadProgressDialog).toBeVisible();
+    await assetsPage.waitForUploadProgressSuccess();
+
+    // Close the dialog
+    await assetsPage.closeUploadProgressDialog();
+    await expect(assetsPage.uploadProgressDialog).not.toBeVisible();
+  });
+});
