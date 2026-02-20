@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { errors } from '@strapi/utils';
 import { omit, uniq } from 'lodash/fp';
+import type { ContentApiApiToken } from '../../../../shared/contracts/api-token';
 import constants from '../constants';
 import {
   create as apiTokenCreate,
@@ -75,6 +76,7 @@ describe('API Token', () => {
   describe('create', () => {
     test('Creates a new read-only token', async () => {
       const create = jest.fn(({ data }) => Promise.resolve(data));
+      const callingUser = { id: 1, roles: [] } as any;
 
       setupStrapiMock({
         db: {
@@ -85,12 +87,13 @@ describe('API Token', () => {
       });
 
       const attributes = {
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'read-only',
       } as any;
 
-      const res = await apiTokenCreate(attributes);
+      const res = await apiTokenCreate(attributes, callingUser);
 
       expect(create).toHaveBeenCalledWith({
         select: expect.arrayContaining([expect.any(String)]),
@@ -98,15 +101,17 @@ describe('API Token', () => {
           ...attributes,
           accessKey: hash(mockedApiToken.hexedString),
           encryptedKey: expect.any(String),
+          adminUserOwner: null,
           expiresAt: null,
           lifespan: null,
         },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
       expect(res).toEqual({
         ...attributes,
         accessKey: mockedApiToken.hexedString,
         encryptedKey: expect.any(String),
+        adminUserOwner: null,
         expiresAt: null,
         lifespan: null,
       });
@@ -114,6 +119,7 @@ describe('API Token', () => {
 
     test('Creates a new token with lifespan', async () => {
       const attributes = {
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'read-only',
@@ -121,6 +127,7 @@ describe('API Token', () => {
       } as any;
 
       const expectedExpires = Date.now() + attributes.lifespan;
+      const callingUser = { id: 1, roles: [] } as any;
 
       const create = jest.fn(({ data }) => Promise.resolve(data));
       setupStrapiMock({
@@ -131,7 +138,7 @@ describe('API Token', () => {
         },
       });
 
-      const res = await apiTokenCreate(attributes);
+      const res = await apiTokenCreate(attributes, callingUser);
 
       expect(create).toHaveBeenCalledWith({
         select: expect.arrayContaining([expect.any(String)]),
@@ -139,15 +146,17 @@ describe('API Token', () => {
           ...attributes,
           accessKey: hash(mockedApiToken.hexedString),
           encryptedKey: expect.any(String),
+          adminUserOwner: null,
           expiresAt: expectedExpires,
           lifespan: attributes.lifespan,
         },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
       expect(res).toEqual({
         ...attributes,
         accessKey: mockedApiToken.hexedString,
         encryptedKey: expect.any(String),
+        adminUserOwner: null,
         expiresAt: expectedExpires,
         lifespan: attributes.lifespan,
       });
@@ -156,6 +165,7 @@ describe('API Token', () => {
 
     test('It throws when creating a token with invalid lifespan', async () => {
       const attributes = {
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'read-only',
@@ -179,7 +189,9 @@ describe('API Token', () => {
     });
 
     test('Creates a custom token', async () => {
+      const callingUser = { id: 1, roles: [] } as any;
       const attributes = {
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'custom',
@@ -188,6 +200,7 @@ describe('API Token', () => {
 
       const createTokenResult = {
         ...attributes,
+        adminUserOwner: null,
         lifespan: null,
         expiresAt: null,
         id: 1,
@@ -218,7 +231,7 @@ describe('API Token', () => {
         },
       });
 
-      const res = await apiTokenCreate(attributes);
+      const res = await apiTokenCreate(attributes, callingUser);
 
       expect(load).toHaveBeenCalledWith(
         {
@@ -234,10 +247,11 @@ describe('API Token', () => {
           ...omit('permissions', attributes),
           accessKey: hash(mockedApiToken.hexedString),
           encryptedKey: expect.any(String),
+          adminUserOwner: null,
           expiresAt: null,
           lifespan: null,
         },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
       // call to create permission
       expect(create).toHaveBeenNthCalledWith(2, {
@@ -260,7 +274,9 @@ describe('API Token', () => {
     });
 
     test('Creates a custom token with no permissions', async () => {
+      const callingUser = { id: 1, roles: [] } as any;
       const attributes = {
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'custom',
@@ -269,6 +285,7 @@ describe('API Token', () => {
 
       const createTokenResult = {
         ...attributes,
+        adminUserOwner: null,
         lifespan: null,
         expiresAt: null,
         id: 1,
@@ -299,7 +316,7 @@ describe('API Token', () => {
         },
       });
 
-      const res = await apiTokenCreate(attributes);
+      const res = await apiTokenCreate(attributes, callingUser);
 
       expect(load).toHaveBeenCalledWith(
         {
@@ -316,10 +333,11 @@ describe('API Token', () => {
           ...omit('permissions', attributes),
           accessKey: hash(mockedApiToken.hexedString),
           encryptedKey: expect.any(String),
+          adminUserOwner: null,
           expiresAt: null,
           lifespan: null,
         },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
 
       expect(res).toEqual({
@@ -331,7 +349,9 @@ describe('API Token', () => {
     });
 
     test('Creates a custom token with duplicate permissions should ignore duplicates', async () => {
+      const callingUser = { id: 1, roles: [] } as any;
       const attributes = {
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'custom',
@@ -340,6 +360,7 @@ describe('API Token', () => {
 
       const createTokenResult = {
         ...attributes,
+        adminUserOwner: callingUser.id,
         lifespan: null,
         expiresAt: null,
         id: 1,
@@ -370,7 +391,7 @@ describe('API Token', () => {
         },
       });
 
-      const res = await apiTokenCreate(attributes);
+      const res = await apiTokenCreate(attributes, callingUser) as ContentApiApiToken;
 
       expect(res.permissions).toHaveLength(2);
       expect(res.permissions).toEqual(['api::foo.foo.find', 'api::foo.foo.create']);
@@ -378,6 +399,7 @@ describe('API Token', () => {
 
     test('Creates a custom token with invalid permissions should throw', async () => {
       const attributes = {
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'custom',
@@ -422,6 +444,123 @@ describe('API Token', () => {
 
       expect(load).not.toHaveBeenCalled();
       expect(create).not.toHaveBeenCalled();
+    });
+
+    test('Throws when creating a content API token with adminPermissions', async () => {
+      const attributes = {
+        kind: 'content-api',
+        name: 'api-token_tests-name',
+        description: 'api-token_tests-description',
+        type: 'read-only',
+        adminPermissions: [{ action: 'some.admin.action' }],
+      } as any;
+
+      setupStrapiMock({});
+
+      await expect(() => apiTokenCreate(attributes)).rejects.toThrow(
+        'Legacy tokens cannot carry admin permissions'
+      );
+    });
+
+    test('Throws when creating a content API token with adminUserOwner', async () => {
+      const attributes = {
+        kind: 'content-api',
+        name: 'api-token_tests-name',
+        description: 'api-token_tests-description',
+        type: 'read-only',
+        adminUserOwner: 42,
+      } as any;
+
+      setupStrapiMock({});
+
+      await expect(() => apiTokenCreate(attributes)).rejects.toThrow(
+        'Legacy tokens cannot have an admin user owner'
+      );
+    });
+
+    test('Throws when creating an admin token with a content API type', async () => {
+      const attributes = {
+        kind: 'admin',
+        name: 'api-token_tests-name',
+        description: 'api-token_tests-description',
+        type: 'read-only',
+      } as any;
+
+      setupStrapiMock({});
+
+      await expect(() => apiTokenCreate(attributes)).rejects.toThrow(
+        'Admin tokens cannot carry a legacy type'
+      );
+    });
+
+    test('Throws when creating an admin token with content-API permissions', async () => {
+      const attributes = {
+        kind: 'admin',
+        name: 'api-token_tests-name',
+        description: 'api-token_tests-description',
+        permissions: ['api::foo.foo.find'],
+      } as any;
+
+      setupStrapiMock({});
+
+      await expect(() => apiTokenCreate(attributes)).rejects.toThrow(
+        'Admin tokens cannot carry legacy content-API permissions'
+      );
+    });
+
+    test('Throws when creating an admin token without a callingUser', async () => {
+      const attributes = {
+        kind: 'admin',
+        name: 'api-token_tests-name',
+        description: 'api-token_tests-description',
+      } as any;
+
+      setupStrapiMock({});
+
+      await expect(() => apiTokenCreate(attributes)).rejects.toThrow(
+        'Creating an admin token requires an authenticated admin user'
+      );
+    });
+
+    test('Creates an admin token and defaults owner to callingUser', async () => {
+      const callingUser = { id: 1, roles: [] } as any;
+      const attributes = {
+        kind: 'admin',
+        name: 'api-token_tests-name',
+        description: 'api-token_tests-description',
+      } as any;
+
+      const create = jest.fn(({ data }) => Promise.resolve(data));
+      setupStrapiMock({
+        db: {
+          query() {
+            return { create };
+          },
+        },
+      });
+
+      const res = await apiTokenCreate(attributes, callingUser);
+
+      expect(create).toHaveBeenCalledWith({
+        select: expect.arrayContaining(['kind']),
+        data: {
+          ...attributes,
+          accessKey: hash(mockedApiToken.hexedString),
+          encryptedKey: expect.any(String),
+          adminUserOwner: callingUser.id,
+          expiresAt: null,
+          lifespan: null,
+        },
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
+      });
+      expect(res).toEqual({
+        ...attributes,
+        accessKey: mockedApiToken.hexedString,
+        encryptedKey: expect.any(String),
+        adminUserOwner: callingUser.id,
+        expiresAt: null,
+        lifespan: null,
+      });
     });
   });
 
@@ -510,8 +649,9 @@ describe('API Token', () => {
       },
     ];
 
-    test('It lists all the tokens', async () => {
+    test('It lists all the tokens (super admin sees all)', async () => {
       const findMany = jest.fn().mockResolvedValue(tokens);
+      const superAdmin = { id: 1, roles: [{ code: 'strapi-super-admin' }] } as any;
 
       global.strapi = {
         db: {
@@ -521,14 +661,38 @@ describe('API Token', () => {
         },
       } as any;
 
-      const res = await list();
+      const res = await list(superAdmin);
 
       expect(findMany).toHaveBeenCalledWith({
         select: expect.arrayContaining([expect.any(String)]),
         orderBy: { name: 'ASC' },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
+        where: {},
       });
       expect(res).toEqual(tokens);
+    });
+
+    test('Non-super-admin only sees ownerless tokens and own tokens', async () => {
+      const findMany = jest.fn().mockResolvedValue(tokens);
+      const regularUser = { id: 2, roles: [{ code: 'strapi-editor' }] } as any;
+
+      global.strapi = {
+        db: {
+          query() {
+            return { findMany };
+          },
+        },
+      } as any;
+
+      await list(regularUser);
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            $or: [{ adminUserOwner: null }, { adminUserOwner: { id: regularUser.id } }],
+          },
+        })
+      );
     });
   });
 
@@ -556,7 +720,7 @@ describe('API Token', () => {
       expect(mockedDelete).toHaveBeenCalledWith({
         select: expect.arrayContaining([expect.any(String)]),
         where: { id: token.id },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
       expect(res).toEqual(token);
     });
@@ -577,7 +741,7 @@ describe('API Token', () => {
       expect(mockedDelete).toHaveBeenCalledWith({
         select: expect.arrayContaining([expect.any(String)]),
         where: { id: 42 },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
 
       expect(res).toEqual(null);
@@ -608,7 +772,7 @@ describe('API Token', () => {
       expect(findOne).toHaveBeenCalledWith({
         select: expect.arrayContaining([expect.any(String)]),
         where: { id: token.id },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
       expect(res).toEqual(token);
     });
@@ -629,7 +793,7 @@ describe('API Token', () => {
       expect(findOne).toHaveBeenCalledWith({
         select: expect.arrayContaining([expect.any(String)]),
         where: { id: 42 },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
       expect(res).toEqual(null);
     });
@@ -694,6 +858,7 @@ describe('API Token', () => {
     test('Updates a non-custom token', async () => {
       const token = {
         id: 1,
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'read-only',
@@ -747,6 +912,7 @@ describe('API Token', () => {
 
       const originalToken = {
         id,
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'custom',
@@ -796,6 +962,7 @@ describe('API Token', () => {
 
       const originalToken = {
         id,
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'custom',
@@ -813,7 +980,7 @@ describe('API Token', () => {
       const create = jest.fn();
       const load = jest
         .fn()
-        // first call to load original permissions
+        // load permissions for result (legacy path loads permissions once)
         .mockResolvedValueOnce(
           Promise.resolve(
             originalToken.permissions.map((p) => {
@@ -822,17 +989,7 @@ describe('API Token', () => {
               };
             })
           )
-        )
-        // second call to check new permissions
-        .mockResolvedValueOnce(
-          Promise.resolve(
-            originalToken.permissions.map((p) => {
-              return {
-                action: p,
-              };
-            })
-          )
-        );
+      );
 
       global.strapi = {
         db: {
@@ -870,6 +1027,7 @@ describe('API Token', () => {
 
       const originalToken = {
         id,
+        kind: 'content-api',
         name: 'api-token_tests-name',
         description: 'api-token_tests-description',
         type: 'custom',
@@ -984,6 +1142,81 @@ describe('API Token', () => {
 
       expect(res).toEqual(updatedAttributes);
     });
+
+    test('Throws when trying to change kind on update', async () => {
+      const originalToken = {
+        id: 1,
+        kind: 'content-api',
+        name: 'api-token_tests-name',
+        description: 'api-token_tests-description',
+        type: 'read-only',
+      };
+
+      const findOne = jest.fn().mockResolvedValue(originalToken);
+
+      global.strapi = {
+        db: {
+          query() {
+            return { findOne };
+          },
+        },
+        config: { get: jest.fn(() => '') },
+      } as any;
+
+      await expect(
+        apiTokenUpdate(1, { kind: 'admin', name: 'api-token_tests-name' } as any)
+      ).rejects.toThrow('kind is immutable after creation');
+    });
+
+    test('Throws when setting admin fields on a content API token update', async () => {
+      const originalToken = {
+        id: 1,
+        kind: 'content-api',
+        name: 'api-token_tests-name',
+        description: 'api-token_tests-description',
+        type: 'read-only',
+      };
+
+      const findOne = jest.fn().mockResolvedValue(originalToken);
+
+      global.strapi = {
+        db: {
+          query() {
+            return { findOne };
+          },
+        },
+        config: { get: jest.fn(() => '') },
+      } as any;
+
+      await expect(
+        apiTokenUpdate(1, { adminPermissions: [{ action: 'some.action' }] } as any)
+      ).rejects.toThrow('Legacy tokens cannot carry admin permissions');
+    });
+
+    test('Throws when setting content API fields on an admin token update', async () => {
+      const originalToken = {
+        id: 1,
+        kind: 'admin',
+        name: 'api-token_tests-name',
+        description: 'api-token_tests-description',
+        adminUserOwner: 1,
+      };
+
+      const findOne = jest.fn().mockResolvedValue(originalToken);
+
+      global.strapi = {
+        db: {
+          query() {
+            return { findOne };
+          },
+        },
+        config: { get: jest.fn(() => '') },
+      } as any;
+
+      await expect(
+        apiTokenUpdate(1, { type: 'read-only', name: 'api-token_tests-name' } as any)
+      ).rejects.toThrow('Admin tokens cannot carry a legacy type');
+    });
   });
 
   describe('getByName', () => {
@@ -1010,7 +1243,7 @@ describe('API Token', () => {
       expect(findOne).toHaveBeenCalledWith({
         select: expect.arrayContaining([expect.any(String)]),
         where: { name: token.name },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
       expect(res).toEqual(token);
     });
@@ -1031,9 +1264,81 @@ describe('API Token', () => {
       expect(findOne).toHaveBeenCalledWith({
         select: expect.arrayContaining([expect.any(String)]),
         where: { name: 'unexistant-name' },
-        populate: ['permissions'],
+        populate: ['permissions', 'adminPermissions', 'adminUserOwner'],
       });
       expect(res).toEqual(null);
+    });
+  });
+
+  describe('getBy - includeDecryptedKey option', () => {
+    const setupWithEncryption = () => {
+      // Use the outer ENCRYPTION_KEY so encrypt/decrypt use the same key
+      setupStrapiMock({
+        db: {
+          query() {
+            return {
+              findOne: jest.fn().mockResolvedValue({
+                id: 1,
+                name: 'test-token',
+                type: 'read-only',
+                encryptedKey: encryptionService.encrypt('plaintext-key'),
+              }),
+            };
+          },
+        },
+      });
+    };
+
+    test('By default does NOT select encryptedKey and does NOT return accessKey', async () => {
+      const findOne = jest.fn().mockResolvedValue({
+        id: 1,
+        name: 'test-token',
+        type: 'read-only',
+      });
+
+      setupStrapiMock({
+        db: {
+          query() {
+            return { findOne };
+          },
+        },
+      });
+
+      const res = await getById(1);
+
+      // encryptedKey must not be in the select list
+      const callArgs = findOne.mock.calls[0][0];
+      expect(callArgs.select).not.toContain('encryptedKey');
+      expect(res?.accessKey).toBeUndefined();
+    });
+
+    test('With { includeDecryptedKey: true } selects encryptedKey and returns plaintext accessKey', async () => {
+      setupWithEncryption();
+
+      const res = await getById(1, { includeDecryptedKey: true });
+
+      expect(res?.accessKey).toBe('plaintext-key');
+    });
+
+    test('With { includeDecryptedKey: true } and missing encryptedKey returns token without accessKey', async () => {
+      setupStrapiMock({
+        db: {
+          query() {
+            return {
+              findOne: jest.fn().mockResolvedValue({
+                id: 1,
+                name: 'test-token',
+                type: 'read-only',
+                encryptedKey: null,
+              }),
+            };
+          },
+        },
+      });
+
+      const res = await getById(1, { includeDecryptedKey: true });
+
+      expect(res?.accessKey).toBeUndefined();
     });
   });
 });

@@ -80,6 +80,13 @@ export default {
       // FIXME: Allow setting this
       collectionName: 'strapi_users_roles',
     },
+    apiTokens: {
+      configurable: false,
+      type: 'relation',
+      relation: 'oneToMany',
+      mappedBy: 'adminUserOwner',
+      target: 'admin::api-token',
+    },
     blocked: {
       type: 'boolean',
       default: false,

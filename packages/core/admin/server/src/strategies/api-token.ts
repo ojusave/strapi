@@ -71,15 +71,19 @@ export const authenticate = async (ctx: Context) => {
     });
   }
 
-  if (apiToken.type === constants.API_TOKEN_TYPE.CUSTOM) {
-    const ability = await strapi.contentAPI.permissions.engine.generateAbility(
-      apiToken.permissions.map((action: any) => ({ action }))
-    );
+  if (apiToken.kind === 'content-api') {
+    if (apiToken.type === constants.API_TOKEN_TYPE.CUSTOM) {
+      const ability = await strapi.contentAPI.permissions.engine.generateAbility(
+        apiToken.permissions.map((action: any) => ({ action }))
+      );
 
-    return { authenticated: true, ability, credentials: apiToken };
+      return { authenticated: true, ability, credentials: apiToken };
+    }
+
+    return { authenticated: true, credentials: apiToken };
   }
 
-  return { authenticated: true, credentials: apiToken };
+  return { authenticated: false, error: new ForbiddenError('NON CONTENT API TOKEN NOT SUPPORTED') };
 };
 
 /**

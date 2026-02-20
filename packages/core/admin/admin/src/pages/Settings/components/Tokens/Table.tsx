@@ -23,7 +23,13 @@ import { Table as TableImpl } from '../../../../components/Table';
 import { useTracking } from '../../../../features/Tracking';
 import { useQueryParams } from '../../../../hooks/useQueryParams';
 
+import type { AdminUser } from '../../../../../../shared/contracts/shared';
 import type { Data } from '@strapi/types';
+
+const formatAdminUserName = (owner: AdminUser): string => {
+  const full = [owner.firstname, owner.lastname].filter(Boolean).join(' ');
+  return full || owner.username || owner.email || '';
+};
 
 /* -------------------------------------------------------------------------------------------------
  * Table
@@ -124,6 +130,22 @@ const Table = ({
                     </Typography>
                   )}
                 </TableImpl.Cell>
+                {tokenType === 'api-token' &&
+                  (() => {
+                    const apiToken = token as ApiToken;
+                    const owner = apiToken.kind === 'admin' ? apiToken.adminUserOwner : undefined;
+                    const ownerName =
+                      owner !== undefined && owner !== null && typeof owner === 'object'
+                        ? formatAdminUserName(owner)
+                        : '';
+                    return (
+                      <TableImpl.Cell maxWidth="20rem">
+                        <Typography textColor="neutral800" ellipsis>
+                          {ownerName}
+                        </Typography>
+                      </TableImpl.Cell>
+                    );
+                  })()}
                 {canUpdate || canRead || canDelete ? (
                   <TableImpl.Cell>
                     <Flex justifyContent="end">

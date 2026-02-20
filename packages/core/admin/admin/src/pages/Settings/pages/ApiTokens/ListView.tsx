@@ -55,6 +55,14 @@ const TABLE_HEADERS = [
     },
     sortable: false,
   },
+  {
+    name: 'adminUserOwner',
+    label: {
+      id: 'Settings.apiTokens.ListView.headers.owner',
+      defaultMessage: 'Owner',
+    },
+    sortable: false,
+  },
 ];
 
 export const ListView = () => {

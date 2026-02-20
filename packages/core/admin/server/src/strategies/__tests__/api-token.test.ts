@@ -14,6 +14,7 @@ describe('API Token Auth Strategy', () => {
 
     const apiToken = {
       id: 1,
+      kind: 'content-api',
       name: 'api-token_tests-name',
       description: 'api-token_tests-description',
       type: 'read-only',

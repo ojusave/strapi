@@ -65,4 +65,26 @@ export default [
       ],
     },
   },
+  {
+    method: 'GET',
+    path: '/api-tokens/:id/admin-permissions',
+    handler: 'api-token.getAdminPermissions',
+    config: {
+      policies: [
+        'admin::isAuthenticatedAdmin',
+        { name: 'admin::hasPermissions', config: { actions: ['admin::api-tokens.read'] } },
+      ],
+    },
+  },
+  {
+    method: 'PUT',
+    path: '/api-tokens/:id/admin-permissions',
+    handler: 'api-token.updateAdminPermissions',
+    config: {
+      policies: [
+        'admin::isAuthenticatedAdmin',
+        { name: 'admin::hasPermissions', config: { actions: ['admin::api-tokens.update'] } },
+      ],
+    },
+  },
 ];

@@ -1,26 +1,39 @@
 import * as React from 'react';
 
-import { Box, Flex, Grid, Typography } from '@strapi/design-system';
+import { Box, Field, Flex, Grid, TextInput, Typography } from '@strapi/design-system';
 import { FormikErrors } from 'formik';
 import { useIntl } from 'react-intl';
 
+import { useAuth } from '../../../../../../features/Auth';
 import { LifeSpanInput } from '../../../../components/Tokens/LifeSpanInput';
 import { TokenDescription } from '../../../../components/Tokens/TokenDescription';
 import { TokenName } from '../../../../components/Tokens/TokenName';
 import { TokenTypeSelect } from '../../../../components/Tokens/TokenTypeSelect';
 
-import type { ApiToken } from '../../../../../../../../shared/contracts/api-token';
+import type {
+  AdminApiToken,
+  ApiToken,
+  ContentApiApiToken,
+} from '../../../../../../../../shared/contracts/api-token';
+import type { AdminUser } from '../../../../../../../../shared/contracts/shared';
+import type { AuthContextValue } from '../../../../../../features/Auth';
 
 interface FormApiTokenContainerProps {
-  errors?: FormikErrors<Pick<ApiToken, 'name' | 'description' | 'lifespan' | 'type'>>;
+  errors?: FormikErrors<Pick<ContentApiApiToken, 'name' | 'description' | 'lifespan' | 'type'>>;
   onChange: ({ target: { name, value } }: { target: { name: string; value: string } }) => void;
   canEditInputs: boolean;
-  values?: Partial<Pick<ApiToken, 'name' | 'description' | 'lifespan' | 'type'>>;
+  values?: Partial<Pick<ContentApiApiToken, 'name' | 'description' | 'lifespan' | 'type'>>;
   isCreating: boolean;
   apiToken?: null | Partial<ApiToken>;
+  kind: 'admin' | 'content-api';
   onDispatch: React.Dispatch<any>;
   setHasChangedPermissions: (hasChanged: boolean) => void;
 }
+
+const formatAdminUserName = (owner: AdminUser): string => {
+  const full = [owner.firstname, owner.lastname].filter(Boolean).join(' ');
+  return full || owner.username || owner.email || '';
+};
 
 export const FormApiTokenContainer = ({
   errors = {},
@@ -29,10 +42,23 @@ export const FormApiTokenContainer = ({
   isCreating,
   values = {},
   apiToken = {},
+  kind,
   onDispatch,
   setHasChangedPermissions,
 }: FormApiTokenContainerProps) => {
   const { formatMessage } = useIntl();
+  const currentUser = useAuth('FormApiTokenContainer', (state: AuthContextValue) => state.user);
+
+  const ownerToDisplay = (() => {
+    const owner =
+      kind === 'admin'
+        ? (apiToken as Partial<AdminApiToken> | null | undefined)?.adminUserOwner
+        : undefined;
+    if (owner === undefined || owner === null) return null;
+    if (typeof owner !== 'object') return null;
+    if (currentUser?.id !== undefined && owner.id === currentUser.id) return null;
+    return owner;
+  })();
 
   const handleChangeSelectApiTokenType = ({ target: { value } }: { target: { value: string } }) => {
     setHasChangedPermissions(false);
@@ -117,25 +143,45 @@ export const FormApiTokenContainer = ({
             />
           </Grid.Item>
 
-          <Grid.Item key="type" m={6} xs={12} direction="column" alignItems="stretch">
-            <TokenTypeSelect
-              value={values['type']}
-              error={errors['type']}
-              label={{
-                id: 'Settings.tokens.form.type',
-                defaultMessage: 'Token type',
-              }}
-              onChange={(value) => {
-                // @ts-expect-error – DS Select supports numbers & strings, will be removed in V2
-                handleChangeSelectApiTokenType({ target: { value } });
+          {kind === 'content-api' && (
+            <Grid.Item key="type" m={6} xs={12} direction="column" alignItems="stretch">
+              <TokenTypeSelect
+                value={values['type']}
+                error={errors['type']}
+                label={{
+                  id: 'Settings.tokens.form.type',
+                  defaultMessage: 'Token type',
+                }}
+                onChange={(value) => {
+                  // @ts-expect-error – DS Select supports numbers & strings, will be removed in V2
+                  handleChangeSelectApiTokenType({ target: { value } });
 
-                // @ts-expect-error – DS Select supports numbers & strings, will be removed in V2
-                onChange({ target: { name: 'type', value } });
-              }}
-              options={typeOptions}
-              canEditInputs={canEditInputs}
-            />
-          </Grid.Item>
+                  // @ts-expect-error – DS Select supports numbers & strings, will be removed in V2
+                  onChange({ target: { name: 'type', value } });
+                }}
+                options={typeOptions}
+                canEditInputs={canEditInputs}
+              />
+            </Grid.Item>
+          )}
+          {ownerToDisplay !== null && (
+            <Grid.Item key="owner" m={6} xs={12} direction="column" alignItems="stretch">
+              <Field.Root name="adminUserOwner">
+                <Field.Label>
+                  {formatMessage({
+                    id: 'Settings.apiTokens.form.owner',
+                    defaultMessage: 'Owner',
+                  })}
+                </Field.Label>
+                <TextInput
+                  type="text"
+                  value={formatAdminUserName(ownerToDisplay)}
+                  disabled
+                  onChange={() => {}}
+                />
+              </Field.Root>
+            </Grid.Item>
+          )}
         </Grid.Root>
       </Flex>
     </Box>
