@@ -10,6 +10,8 @@ import { Config, type File } from '../types';
 
 const { ApplicationError } = errors;
 
+const FETCH_TIMEOUT_MS = 60_000; // 60 seconds
+
 /**
  * Represents a file fetched from a URL, compatible with the upload pipeline
  */
@@ -36,7 +38,8 @@ const getFilenameFromUrl = (url: string, contentDisposition?: string | null): st
       /filename\*?=['"]?(?:UTF-\d['"]*)?([^;\r\n"']*)['"]?/i
     );
     if (filenameMatch?.[1]) {
-      return decodeURIComponent(filenameMatch[1]);
+      // Use path.basename to prevent path traversal attacks
+      return path.basename(decodeURIComponent(filenameMatch[1]));
     }
   }
 
@@ -46,7 +49,8 @@ const getFilenameFromUrl = (url: string, contentDisposition?: string | null): st
     const pathname = urlObj.pathname;
     const filename = pathname.split('/').pop();
     if (filename && filename.length > 0) {
-      return decodeURIComponent(filename);
+      // Use path.basename to prevent path traversal attacks (e.g., URL-encoded separators)
+      return path.basename(decodeURIComponent(filename));
     }
   } catch {
     // Invalid URL, use default
@@ -65,7 +69,8 @@ const getFilenameFromUrl = (url: string, contentDisposition?: string | null): st
  */
 const fetchUrlToInputFile = async (
   url: string,
-  tmpWorkingDirectory: string
+  tmpWorkingDirectory: string,
+  sizeLimit?: number
 ): Promise<FetchUrlResult> => {
   // Validate URL protocol
   let parsedUrl: URL;
@@ -79,13 +84,31 @@ const fetchUrlToInputFile = async (
     throw new ApplicationError(`Invalid URL protocol. Only http and https are allowed: ${url}`);
   }
 
-  // Fetch the URL
-  const response = await fetch(url);
+  // Fetch the URL with timeout
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new ApplicationError(`Request timed out while fetching URL: ${url}`);
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     throw new ApplicationError(
       `Failed to fetch URL: ${url} (${response.status} ${response.statusText})`
     );
+  }
+
+  // Check Content-Length header for early rejection of large files
+  if (sizeLimit) {
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && parseInt(contentLength, 10) > sizeLimit) {
+      throw new ApplicationError(
+        `File too large: maximum allowed size is ${Math.round(sizeLimit / (1024 * 1024))}MB`
+      );
+    }
   }
 
   // Get content type and filename

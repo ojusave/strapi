@@ -609,5 +609,53 @@ describe('Upload SSE Streaming', () => {
         expect(fetchingEvents.length).toBe(2);
       });
     });
+
+    describe('Size limit', () => {
+      let authToken;
+
+      beforeAll(async () => {
+        const loginRes = await rq({
+          method: 'POST',
+          url: '/admin/login',
+          body: {
+            email: 'admin@strapi.io',
+            password: 'Password123',
+          },
+        });
+        authToken = loginRes.body?.data?.token;
+      });
+
+      afterEach(() => {
+        // Reset config after each test
+        strapi.config.set('plugin::upload.sizeLimit', 1000000000); // Reset to default 1GB
+      });
+
+      test('Rejects files exceeding sizeLimit based on Content-Length header', async () => {
+        if (!authToken) {
+          return;
+        }
+
+        // Set a very small size limit (100 bytes)
+        strapi.config.set('plugin::upload.sizeLimit', 100);
+
+        // Use httpbin which returns proper Content-Length headers
+        const res = await makeRawRequest(strapi, {
+          method: 'POST',
+          path: '/upload/unstable/stream-from-urls',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: { urls: ['https://httpbin.org/bytes/1000'] }, // 1000 bytes > 100 byte limit
+        });
+
+        expect(res.statusCode).toBe(200);
+
+        // Should have file:error event for size limit
+        const errorEvent = res.events.find((e) => e.event === 'file:error');
+        expect(errorEvent).toBeDefined();
+        expect(errorEvent.data.message).toMatch(/too large|size/i);
+      });
+    });
   });
 });

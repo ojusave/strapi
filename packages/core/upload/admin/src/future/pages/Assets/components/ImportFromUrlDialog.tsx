@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { Box, Button, Field, Modal, Textarea } from '@strapi/design-system';
+import { Button, Field, Modal, Textarea } from '@strapi/design-system';
 import { useIntl } from 'react-intl';
 
 import { validateUrls } from '../../../utils/files';
@@ -56,36 +56,37 @@ export const ImportFromUrlDialog = ({ open, onClose, onUpload }: ImportFromUrlDi
           </Modal.Header>
 
           <Modal.Body>
-            <Box paddingTop={4} paddingBottom={4}>
-              <Field.Root
-                error={error || undefined}
-                hint={formatMessage({
-                  id: getTranslationKey('input.url.description'),
-                  defaultMessage: 'Separate your URL links by a carriage return.',
+            <Field.Root
+              error={error || undefined}
+              hint={formatMessage({
+                id: getTranslationKey('input.url.description'),
+                defaultMessage: 'Separate your URL links by a carriage return.',
+              })}
+            >
+              <Field.Label>
+                {formatMessage({
+                  id: getTranslationKey('input.url.label'),
+                  defaultMessage: 'URL(s)',
                 })}
-              >
-                <Field.Label>
-                  {formatMessage({
-                    id: getTranslationKey('input.url.label'),
-                    defaultMessage: 'URL',
-                  })}
-                </Field.Label>
-                <Textarea
-                  name="urls"
-                  placeholder={formatMessage({
-                    id: getTranslationKey('input.url.placeholder'),
-                    defaultMessage: 'Empty',
-                  })}
-                  value={urls}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
-                    setUrls(e.target.value);
-                    setError(null);
-                  }}
-                />
-                <Field.Hint />
-                <Field.Error />
-              </Field.Root>
-            </Box>
+              </Field.Label>
+              <Textarea
+                name="urls"
+                minHeight="unset"
+                rows={Math.min(urls.split('\n').length, 7)}
+                maxHeight="10.5rem"
+                placeholder={formatMessage({
+                  id: getTranslationKey('input.url.placeholder'),
+                  defaultMessage: 'Empty',
+                })}
+                value={urls}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                  setUrls(e.target.value);
+                  setError(null);
+                }}
+              />
+              <Field.Hint />
+              <Field.Error />
+            </Field.Root>
           </Modal.Body>
 
           <Modal.Footer>

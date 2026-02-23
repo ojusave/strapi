@@ -10,7 +10,7 @@ import { getService } from '../utils';
 import { ACTIONS, FILE_MODEL_UID } from '../constants';
 import { validateBulkUpdateBody, validateUploadBody } from './validation/admin/upload';
 import { findEntityAndCheckPermissions } from './utils/find-entity-and-check-permissions';
-import { FileInfo } from '../types';
+import { Config, FileInfo } from '../types';
 import { prepareUploadRequest, type FileUploadError } from '../utils/mime-validation';
 import type { UploadFileInfo } from '../../../shared/contracts/files';
 
@@ -375,6 +375,7 @@ export default {
 
     // Create temp directory for fetched files
     const tmpWorkingDirectory = await fse.mkdtemp(path.join(os.tmpdir(), 'strapi-url-upload-'));
+    const { sizeLimit } = strapi.config.get<Config>('plugin::upload');
 
     try {
       // Process each URL sequentially
@@ -385,7 +386,11 @@ export default {
 
         try {
           // Fetch URL to temp file
-          const { file } = await fileService.fetchUrlToInputFile(url, tmpWorkingDirectory);
+          const { file } = await fileService.fetchUrlToInputFile(
+            url,
+            tmpWorkingDirectory,
+            sizeLimit
+          );
           const fileName = file.originalFilename;
 
           writeSSE('file:uploading', {
