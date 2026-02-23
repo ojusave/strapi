@@ -67,7 +67,7 @@ const uploadProgressSlice = createSlice({
       action: PayloadAction<{
         totalFiles: number;
         fileNames: string[];
-        fileSizes: number[];
+        fileSizes?: number[];
       }>
     ) {
       state.isVisible = true;
@@ -79,7 +79,7 @@ const uploadProgressSlice = createSlice({
         name,
         index,
         status: 'pending' as FileProgressStatus,
-        size: action.payload.fileSizes[index] || 0,
+        size: action.payload.fileSizes?.[index] ?? 0,
       }));
 
       state.files = pendingFiles;
@@ -91,9 +91,10 @@ const uploadProgressSlice = createSlice({
       state,
       action: PayloadAction<{ name: string; index: number; total: number; size: number }>
     ) {
-      const { index } = action.payload;
+      const { index, size } = action.payload;
       if (state.files[index]) {
         state.files[index].status = 'uploading';
+        state.files[index].size = size;
       }
     },
     setFileComplete(state, action: PayloadAction<{ index: number; file: File }>) {

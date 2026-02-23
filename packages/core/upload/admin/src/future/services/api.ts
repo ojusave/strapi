@@ -10,7 +10,7 @@ import {
   setUploadFailed,
   retryCancelledFiles,
 } from '../store/uploadProgress';
-import { fetchUrlToFile, getFilenameFromUrl } from '../utils/files';
+import { getFilenameFromUrl } from '../utils/files';
 
 import type {
   CreateFilesStream,
@@ -172,6 +172,37 @@ const fetchUploadStream = async ({
 };
 
 /**
+ * Makes a streaming upload-from-URLs request to the server.
+ * Sends URLs as JSON body instead of FormData.
+ */
+const fetchUrlUploadStream = async ({
+  token,
+  urls,
+  folderId,
+  signal,
+}: {
+  token: string | null | undefined;
+  urls: string[];
+  folderId: number | null;
+  signal: AbortSignal;
+}): Promise<Response> => {
+  const backendURL = window.strapi.backendURL;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return fetch(`${backendURL}/upload/unstable/stream-from-urls`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ urls, folderId }),
+    signal,
+  });
+};
+
+/**
  * Options for processing an SSE upload stream.
  */
 interface ProcessSSEStreamOptions {
@@ -227,6 +258,18 @@ const processSSEStream = async ({
       const mappedIndex = indexMapper(parsed.index as number);
 
       switch (event) {
+        case 'file:fetching': {
+          // URL is being fetched server-side - mark as uploading (processing)
+          dispatch(
+            setFileUploading({
+              name: parsed.url as string,
+              index: mappedIndex,
+              total: parsed.total as number,
+              size: 0,
+            })
+          );
+          break;
+        }
         case 'file:uploading': {
           const payload = parsed as CreateFilesStreamEvents.FileUploadingEvent;
           dispatch(
@@ -508,7 +551,7 @@ const uploadApi = adminApi
 
       /**
        * Upload files from URLs.
-       * Fetches each URL, dispatches errors for failed fetches, and uploads successful ones.
+       * Sends URLs to the server which fetches and uploads them.
        */
       uploadFromUrls: builder.mutation<CreateFilesStream.Response, UploadFromUrlsArgs>({
         queryFn: async ({ urls, folderId }, { dispatch, getState }) => {
@@ -522,7 +565,6 @@ const uploadApi = adminApi
             openUploadProgress({
               totalFiles: urls.length,
               fileNames,
-              fileSizes: urls.map(() => 0), // Size unknown until fetched
             })
           );
           dispatch(updateProgress(0));
@@ -534,83 +576,71 @@ const uploadApi = adminApi
           const abortController = new AbortController();
           registerAbortController(uploadId, abortController);
 
-          // Fetch each URL
-          const fetchResults = await Promise.allSettled(
-            urls.map(async (url, index) => {
-              // Check if aborted before fetching
-              if (abortController.signal.aborted) {
-                throw new DOMException('Aborted', 'AbortError');
-              }
+          try {
+            // Send URLs to server for fetching and uploading
+            const response = await fetchUrlUploadStream({
+              token,
+              urls,
+              folderId,
+              signal: abortController.signal,
+            });
 
+            if (!response.ok || !response.body) {
+              unregisterAbortController(uploadId);
+
+              let errorMessage = 'Upload request failed';
               try {
-                const file = await fetchUrlToFile(url);
-                return { index, file };
-              } catch (error) {
-                // Dispatch error for this file (same as upload error)
-                dispatch(
-                  setFileError({
-                    index,
-                    name: fileNames[index],
-                    message: error instanceof Error ? error.message : 'Failed to fetch',
-                  })
-                );
-                throw error;
+                const errorData = await response.json();
+                if (errorData.error?.message) {
+                  errorMessage = errorData.error.message;
+                } else if (errorData.message) {
+                  errorMessage = errorData.message;
+                }
+              } catch {
+                errorMessage = `Upload failed with status ${response.status}`;
               }
-            })
-          );
 
-          // Check if cancelled during fetch
-          if (abortController.signal.aborted) {
-            unregisterAbortController(uploadId);
-            return { error: { name: 'UnknownError', message: 'Upload cancelled' } };
-          }
+              dispatch(setUploadFailed({ message: errorMessage }));
 
-          // Collect successfully fetched files with their original indices
-          const successfulFetches: Array<{ index: number; file: File }> = [];
-          for (const result of fetchResults) {
-            if (result.status === 'fulfilled') {
-              successfulFetches.push(result.value);
+              return {
+                error: {
+                  name: 'UnknownError' as const,
+                  message: errorMessage,
+                  status: response.status,
+                },
+              };
             }
-          }
 
-          // If all URLs failed, return early
-          if (successfulFetches.length === 0) {
+            // Process SSE stream from server
+            const streamResult = await processSSEStream({
+              response,
+              dispatch,
+            });
+
             unregisterAbortController(uploadId);
+
+            if (streamResult && streamResult.data.length > 0) {
+              return { data: streamResult };
+            }
+
             return { data: { data: [], errors: [] } };
+          } catch (err) {
+            unregisterAbortController(uploadId);
+
+            if (err instanceof DOMException && err.name === 'AbortError') {
+              return { error: { name: 'UnknownError' as const, message: 'Upload cancelled' } };
+            }
+
+            const errorMessage = err instanceof Error ? err.message : 'Network error occurred';
+            dispatch(setUploadFailed({ message: errorMessage }));
+
+            return {
+              error: {
+                name: 'UnknownError' as const,
+                message: errorMessage,
+              },
+            };
           }
-
-          // Store original files for retry functionality (with correct indices)
-          const filesArray: File[] = [];
-          for (const { index, file } of successfulFetches) {
-            filesArray[index] = file;
-          }
-          registerUploadedFiles(uploadId, filesArray);
-
-          // Build FormData for upload
-          const formData = new FormData();
-          const fileInfoArray = successfulFetches.map(({ file }) => ({
-            name: file.name,
-            caption: null,
-            alternativeText: null,
-            folder: folderId,
-          }));
-
-          // Create index mapping: server index -> original index
-          const indexMapping = successfulFetches.map(({ index }) => index);
-
-          successfulFetches.forEach(({ file }) => {
-            formData.append('files', file);
-          });
-          formData.append('fileInfo', JSON.stringify(fileInfoArray));
-
-          return performStreamUpload({
-            token,
-            formData,
-            abortController,
-            uploadId,
-            dispatch,
-            indexMapper: (serverIndex) => indexMapping[serverIndex],
-          });
         },
         invalidatesTags: [{ type: 'Asset', id: 'LIST' }],
       }),

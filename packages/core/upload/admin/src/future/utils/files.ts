@@ -2,16 +2,6 @@ import byteSize from 'byte-size';
 
 const MAX_URLS = 20;
 
-interface UrlFetchError {
-  url: string;
-  message: string;
-}
-
-interface UrlsToFilesResult {
-  files: File[];
-  errors: UrlFetchError[];
-}
-
 /**
  * Formats a byte value into a human-readable string with units.
  *
@@ -86,30 +76,6 @@ export function getFilenameFromUrl(url: string): string {
 }
 
 /**
- * Fetches a single URL and returns it as a File object.
- *
- * @param url - The URL to fetch
- * @returns A promise that resolves to a File object
- * @throws Error if the fetch fails or returns a non-OK status
- *
- * @example
- * ```ts
- * const file = await fetchUrlToFile('https://example.com/image.png');
- * console.log(file.name); // 'image.png'
- * ```
- */
-export async function fetchUrlToFile(url: string): Promise<File> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-  const blob = await response.blob();
-  const filename = getFilenameFromUrl(response.url);
-  const contentType = response.headers.get('content-type') || undefined;
-  return new File([blob], filename, { type: contentType });
-}
-
-/**
  * Validates a newline-separated string of URLs.
  *
  * @param urlsString - A string containing URLs separated by newlines
@@ -157,45 +123,4 @@ export function validateUrls(urlsString: string): { urls: string[]; error: strin
   }
 
   return { urls, error: null };
-}
-
-/**
- * Fetches multiple URLs and converts them to File objects.
- * Handles partial failures gracefully by returning both successful files and errors.
- *
- * @param urls - An array of URLs to fetch
- * @returns A promise that resolves to an object containing successfully fetched files and any errors
- *
- * @example
- * ```ts
- * const { files, errors } = await urlsToFiles([
- *   'https://example.com/valid.jpg',
- *   'https://example.com/invalid.jpg'
- * ]);
- * console.log(files.length); // 1
- * console.log(errors.length); // 1
- * ```
- */
-export async function urlsToFiles(urls: string[]): Promise<UrlsToFilesResult> {
-  const results = await Promise.allSettled(
-    urls.map(async (url) => {
-      return fetchUrlToFile(url);
-    })
-  );
-
-  const files: File[] = [];
-  const errors: UrlFetchError[] = [];
-
-  results.forEach((result, index) => {
-    if (result.status === 'fulfilled') {
-      files.push(result.value);
-    } else {
-      errors.push({
-        url: urls[index],
-        message: result.reason instanceof Error ? result.reason.message : 'Failed to fetch',
-      });
-    }
-  });
-
-  return { files, errors };
 }

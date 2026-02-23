@@ -243,7 +243,7 @@ export const AssetsPage = () => {
 
   const handleUrlUpload = async (urls: string[]) => {
     try {
-      await uploadFromUrls({ urls, folderId: null }).unwrap();
+      await uploadFromUrls({ urls, folderId: currentFolderId }).unwrap();
     } catch (error) {
       // Error is already dispatched to store from the API queryFn
     }

@@ -21,7 +21,7 @@ export class AssetsPage {
   constructor(page: Page) {
     this.page = page;
     this.newButton = page.getByRole('button', { name: 'New' });
-    this.importFilesMenuItem = page.getByRole('menuitem', { name: 'File upload' }).first();
+    this.importFilesMenuItem = page.getByRole('menuitem', { name: 'File upload', exact: true });
     this.importFromUrlMenuItem = page.getByRole('menuitem', { name: 'File upload from URL' });
 
     this.fileInput = page.locator('input[type="file"]');

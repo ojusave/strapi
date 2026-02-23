@@ -5,9 +5,6 @@ import { AssetsPage } from './page-objects/AssetsPage';
 import path from 'path';
 import { describeOnCondition } from '../../../../utils/shared';
 
-// A stable public test image URL
-const TEST_IMAGE_URL = 'https://picsum.photos/id/237/200/300.jpg';
-
 describeOnCondition(process.env.UNSTABLE_MEDIA_LIBRARY === 'true')('File Upload', () => {
   test.beforeEach(async ({ page }) => {
     await resetDatabaseAndImportDataFromPath('with-admin.tar');
@@ -104,7 +101,9 @@ describeOnCondition(process.env.UNSTABLE_MEDIA_LIBRARY === 'true')('File Upload'
     await assetsPage.goto();
 
     // Upload from URL
-    await assetsPage.uploadFilesFromUrl(TEST_IMAGE_URL);
+    await assetsPage.uploadFilesFromUrl(
+      'http://localhost:8000/uploads/coach_beard_profile_72ddb71816.jpg'
+    );
 
     // Verify the upload progress dialog appears and shows success
     await expect(assetsPage.uploadProgressDialog).toBeVisible();
